@@ -7,11 +7,6 @@
                 <input type="radio" id="import_code_radio" value="import_code" v-model="importType">
                 <label for="import_code_radio">{{ i18n.import_backup_code }}</label>
             </div>
-            <div>
-                <p id="import_info">{{ i18n.otp_backup_inform }} <a
-                        href="https://authenticator.cc/docs/en/otp-backup"
-                        target="_blank"> {{ i18n.otp_backup_learn }}</a></p>
-            </div>
             <div v-show="importType === 'import_file'">
                 <div class="import_file" v-if="!getFilePassphrase">
                     <label for="import_file">{{ i18n.import_backup_file }}</label>
