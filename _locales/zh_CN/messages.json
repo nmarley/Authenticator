@@ -288,21 +288,5 @@
                 "example": "Google Drive"
             }
         }
-    },
-    "download_otp_backup": {
-        "message": "下载OTP URL备份",
-        "description": "Download OTP URL backup file."
-    },
-    "otp_unsupported_warn": {
-        "message": "您添加了Steam或战网账号，所以备份文件将不会使用标准输出格式。",
-        "description": "Warning if using account that is not supported by standard backup format."
-    },
-    "otp_backup_inform": {
-        "message": "您可以从一些其它的应用中导入备份。",
-        "description": "Info text on import page"
-    },
-    "otp_backup_learn": {
-        "message": "了解更多",
-        "description": "learn more link on import page. Placed after otp_backup_inform"
     }
 }

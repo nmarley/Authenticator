@@ -9,8 +9,8 @@ import {insertContentScript} from './add-account';
 import {UI} from './ui';
 
 async function getEntries(encryption: Encryption) {
-  const otpEntries: OTPEntry[] = await EntryStorage.get(encryption);
-  return otpEntries;
+  const optEntries: OTPEntry[] = await EntryStorage.get(encryption);
+  return optEntries;
 }
 
 /* tslint:disable-next-line:no-any */
@@ -63,44 +63,6 @@ function getBackupFile(entryData: {[hash: string]: OTPStorage}) {
   json = json.replace(/\n/g, '\r\n');
   const base64Data =
       CryptoJS.enc.Base64.stringify(CryptoJS.enc.Utf8.parse(json));
-  return `data:application/octet-stream;base64,${base64Data}`;
-}
-
-function removeUnsafeData(data: string) {
-  return encodeURIComponent(data.split('::')[0].replace(/:/g, ''));
-}
-
-function getOneLineOtpBackupFile(entryData: {[hash: string]: OTPStorage}) {
-  const otpAuthLines: string[] = [];
-  for (const hash of Object.keys(entryData)) {
-    const otpStorage = entryData[hash];
-    otpStorage.issuer = removeUnsafeData(otpStorage.issuer);
-    otpStorage.account = removeUnsafeData(otpStorage.account);
-    const label = otpStorage.issuer ?
-        (otpStorage.issuer + ':' + otpStorage.account) :
-        otpStorage.account;
-    let type = '';
-    if (otpStorage.type === 'totp' || otpStorage.type === 'hex') {
-      type = 'totp';
-    } else if (otpStorage.type === 'hotp' || otpStorage.type === 'hhex') {
-      type = 'hotp';
-    } else {
-      continue;
-    }
-
-    const otpAuthLine = 'otpauth://' + type + '/' + label +
-        '?secret=' + otpStorage.secret +
-        (otpStorage.issuer ? ('&issuer=' + otpStorage.issuer) : '') +
-        (type === 'hotp' ? ('&counter=' + otpStorage.counter) : '') +
-        (type === 'totp' && otpStorage.period ?
-             ('&period=' + otpStorage.period) :
-             '');
-
-    otpAuthLines.push(otpAuthLine);
-  }
-
-  const base64Data = CryptoJS.enc.Base64.stringify(
-      CryptoJS.enc.Utf8.parse(otpAuthLines.join('\r\n')));
   return `data:application/octet-stream;base64,${base64Data}`;
 }
 
@@ -237,97 +199,6 @@ async function getCachedPassphrase() {
       });
 }
 
-function getEntryDataFromOTPAuthPerLine(importCode: string) {
-  const lines = importCode.split('\n');
-  const exportData: {[hash: string]: OTPStorage} = {};
-  for (let item of lines) {
-    item = item.trim();
-    if (!item.startsWith('otpauth:')) {
-      continue;
-    }
-
-    let uri = item.split('otpauth://')[1];
-    let type = uri.substr(0, 4).toLowerCase();
-    uri = uri.substr(5);
-    let label = uri.split('?')[0];
-    const parameterPart = uri.split('?')[1];
-    if (!parameterPart) {
-      continue;
-    } else {
-      let account = '';
-      let secret = '';
-      let issuer = '';
-      let period: number|undefined = undefined;
-
-      try {
-        label = decodeURIComponent(label);
-      } catch (error) {
-        console.error(error);
-      }
-      if (label.indexOf(':') !== -1) {
-        issuer = label.split(':')[0];
-        account = label.split(':')[1];
-      } else {
-        account = label;
-      }
-      const parameters = parameterPart.split('&');
-      parameters.forEach((item) => {
-        const parameter = item.split('=');
-        if (parameter[0].toLowerCase() === 'secret') {
-          secret = parameter[1];
-        } else if (parameter[0].toLowerCase() === 'issuer') {
-          try {
-            issuer = decodeURIComponent(parameter[1]);
-          } catch {
-            issuer = parameter[1];
-          }
-        } else if (parameter[0].toLowerCase() === 'counter') {
-          let counter = Number(parameter[1]);
-          counter = (isNaN(counter) || counter < 0) ? 0 : counter;
-        } else if (parameter[0].toLowerCase() === 'period') {
-          period = Number(parameter[1]);
-          period = (isNaN(period) || period < 0 || period > 60 ||
-                    60 % period !== 0) ?
-              undefined :
-              period;
-        }
-      });
-
-      if (!secret) {
-        continue;
-      } else if (
-          !/^[0-9a-f]+$/i.test(secret) && !/^[2-7a-z]+=*$/i.test(secret)) {
-        continue;
-      } else {
-        const hash = CryptoJS.MD5(secret).toString();
-        if (!/^[2-7a-z]+=*$/i.test(secret) && /^[0-9a-f]+$/i.test(secret) &&
-            type === 'totp') {
-          type = 'hex';
-        } else if (
-            !/^[2-7a-z]+=*$/i.test(secret) && /^[0-9a-f]+$/i.test(secret) &&
-            type === 'hotp') {
-          type = 'hhex';
-        }
-
-        exportData[hash] = {
-          account,
-          hash,
-          issuer,
-          secret,
-          type,
-          encrypted: false,
-          index: 0,
-          counter: 0
-        };
-        if (period) {
-          exportData[hash].period = period;
-        }
-      }
-    }
-  }
-  return exportData;
-}
-
 export async function entry(_ui: UI) {
   const cachedPassphrase = await getCachedPassphrase();
   const encryption: Encryption = new Encryption(cachedPassphrase);
@@ -347,22 +218,8 @@ export async function entry(_ui: UI) {
     }
   }
 
-  async function hasUnsupportedAccounts() {
-    const entries = await EntryStorage.getExport(new Encryption(''));
-    for (const entry of Object.keys(entries)) {
-      if (entries[entry].type === 'battle' || entries[entry].type === 'steam') {
-        console.log(entries[entry]);
-        return true;
-      }
-    }
-    return false;
-  }
-
-  const unsupportedAccounts = await hasUnsupportedAccounts();
-
   const exportFile = getBackupFile(exportData);
   const exportEncryptedFile = getBackupFile(exportEncData);
-  const exportOneLineOtpAuthFile = getOneLineOtpBackupFile(exportData);
   const siteName = await getSiteName();
   const shouldFilter = hasMatchedEntry(siteName, entries);
   const showSearch = false;
@@ -377,7 +234,6 @@ export async function entry(_ui: UI) {
       exportEncData: JSON.stringify(exportEncData, null, 2),
       exportFile,
       exportEncryptedFile,
-      exportOneLineOtpAuthFile,
       getFilePassphrase: false,
       sector: '',
       sectorStart: false,
@@ -393,7 +249,6 @@ export async function entry(_ui: UI) {
       importEncrypted: false,
       importPassphrase: '',
       importFilePassphrase: '',
-      unsupportedAccounts,
       searchText: ''
     },
     methods: {
@@ -480,16 +335,9 @@ export async function entry(_ui: UI) {
             return decryptedbackupData;
           },
       importBackupCode: async () => {
-        let exportData: {[hash: string]: OTPStorage} = {};
         try {
-          exportData = JSON.parse(_ui.instance.importCode);
-
-        } catch (error) {
-          // Maybe one-otpauth-per line text
-          exportData = getEntryDataFromOTPAuthPerLine(_ui.instance.importCode);
-        }
-
-        try {
+          const exportData: {[hash: string]: OTPStorage} =
+              JSON.parse(_ui.instance.importCode);
           const passphrase: string|null =
               _ui.instance.importEncrypted && _ui.instance.importPassphrase ?
               _ui.instance.importPassphrase :
@@ -540,8 +388,6 @@ export async function entry(_ui: UI) {
         _ui.instance.entries = await getEntries(_ui.instance.encryption);
         _ui.instance.exportFile = getBackupFile(exportData);
         _ui.instance.exportEncryptedFile = getBackupFile(exportEncData);
-        _ui.instance.exportOneLineOtpAuthFile =
-            getOneLineOtpBackupFile(exportData);
         await _ui.instance.updateCode();
         return;
       },
@@ -569,14 +415,8 @@ export async function entry(_ui: UI) {
           const reader = new FileReader();
           let decryptedFileData: {[hash: string]: OTPStorage} = {};
           reader.onload = async () => {
-            let importData: {[hash: string]: OTPStorage} = {};
-            try {
-              importData = JSON.parse(reader.result as string);
-            } catch (e) {
-              importData =
-                  getEntryDataFromOTPAuthPerLine(reader.result as string);
-            }
-
+            const importData: {[hash: string]: OTPStorage} =
+                JSON.parse(reader.result);
             let encrypted = false;
             for (const hash in importData) {
               if (importData[hash].encrypted) {
@@ -609,7 +449,7 @@ export async function entry(_ui: UI) {
               _ui.instance.importFilePassphrase = '';
             }
           };
-          reader.readAsText(target.files[0], 'utf8');
+          reader.readAsText(target.files[0]);
         } else {
           _ui.instance.alert(_ui.instance.i18n.updateFailure);
           if (closeWindow) {
